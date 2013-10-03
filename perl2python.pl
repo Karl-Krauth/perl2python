@@ -35,6 +35,7 @@ sub lex {
                    ["num", qr/(^[0-9]+(\.[0-9]+)?)/s],
                    ["keyWord", getKeyWords()],
                    ["builtin", getBuiltins()],
+                   ["postInc", qr/^(((\$|@|%|&)([a-z]|[0-9]|_|[A-Z])+)\+\+)/],
                    ["variable", qr/(^(\$|@|%|&)([a-z]|[0-9]|_|[A-Z])+)/s],
                    ["semiColon", qr/^(;)/s],
                    ["comma", qr/^(,)/s],
@@ -64,7 +65,7 @@ sub lex {
 }
 
 sub getKeyWords {
-    return qr/(^(if|while|for|foreach|elsif|else|break|continue|in))/s;
+    return qr/(^(if|while|for|foreach|elsif|else|last|next|in))/s;
 }
 
 sub getBuiltins {
@@ -79,6 +80,7 @@ sub getOperators {
 sub parse {
     (my $tokens, my $indentLevel, my $readLine) = @_;
     my $str = "";
+    my $temp;
 
     while (@$tokens) {
         if ($str eq "" or $str =~ /\n$/) {
@@ -92,6 +94,13 @@ sub parse {
             $$tokens[0][1] =~ s/^(.)//;
             $str = $str . $$tokens[0][1];
             shift(@$tokens);
+        } elsif ($$tokens[0][0] eq "postInc") {
+            $$tokens[0][1] =~ s/^.(.*)\+\+/$1/;
+            $temp = $$tokens[0][1];
+            shift(@$tokens);
+            $str = $str . $temp;
+            $str = $str . parse($tokens, 0, 1) . "\n";
+            $str = $str . $temp . " = " . $temp . " + 1"
         } elsif ($$tokens[0][0] eq "operator") {
             $str = $str . " " . $$tokens[0][1] . " ";
             shift(@$tokens);
@@ -137,7 +146,7 @@ sub parse {
             last;
         } elsif ($$tokens[0][0] eq "error") {
             $str = $str . "#";
-            while (@$tokens and $$tokens[0][1] ne "\n") {
+            while (@$tokens and $$tokens[0][1] ne ";") {
                 $str = $str . $$tokens[0][1];
                 shift(@$tokens);
             }
@@ -176,8 +185,9 @@ sub parseKeyword {
         $str = $str . "while " . parse($tokenRef, 0, 1) . ":\n";
         shift(@$tokenRef);
         $temp = parse($tokenRef, $indentLevel + 4, 0);
+        $temp = "\n" . $temp;
         $temp =~ s/\)$/\n/;
-        if ($$tokenRef[0][1] eq "{") {
+        if (@$tokenRef and $$tokenRef[0][1] eq "{") {
             $readLine = 0;
             shift(@$tokenRef);
         } else {
@@ -185,8 +195,17 @@ sub parseKeyword {
         }
 
         $str = $str . parse($tokenRef, $indentLevel + 4, $readLine);
-        $str =~ s/ *\n$//;
+        $str =~ s/\s*$//;
         $str = $str . $temp;
+    } elsif ($$tokenRef[0][1] eq "next") {
+        $str = "continue";
+        shift(@$tokenRef);
+    } elsif ($$tokenRef[0][1] eq "last") {
+        $str = "break";
+        shift(@$tokenRef);
+    } else {
+        $str = "#" . $$tokenRef[0][1];
+        shift(@$tokenRef);
     }
 
     return $str; 
