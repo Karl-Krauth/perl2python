@@ -35,7 +35,8 @@ sub lex {
                    ["num", qr/(^[0-9]+(\.[0-9]+)?)/s],
                    ["keyWord", getKeyWords()],
                    ["builtin", getBuiltins()],
-                   ["postInc", qr/^(((\$|@|%|&)([a-z]|[0-9]|_|[A-Z])+)\+\+)/],
+                   ["post", qr/^(((\$|@|%|&)([a-z]|[0-9]|_|[A-Z])+)(\+\+|--))/],
+                   ["pre", qr/^((\+\+|--)(\$|@|%|&)([a-z]|[0-9]|_|[A-Z])+)/],
                    ["variable", qr/(^(\$|@|%|&)([a-z]|[0-9]|_|[A-Z])+)/s],
                    ["semiColon", qr/^(;)/s],
                    ["comma", qr/^(,)/s],
@@ -81,6 +82,7 @@ sub parse {
     (my $tokens, my $indentLevel, my $readLine) = @_;
     my $str = "";
     my $temp;
+    my $operator;
 
     while (@$tokens) {
         if ($str eq "" or $str =~ /\n$/) {
@@ -94,13 +96,17 @@ sub parse {
             $$tokens[0][1] =~ s/^(.)//;
             $str = $str . $$tokens[0][1];
             shift(@$tokens);
-        } elsif ($$tokens[0][0] eq "postInc") {
-            $$tokens[0][1] =~ s/^.(.*)\+\+/$1/;
+        } elsif ($$tokens[0][0] eq "post") {
+            $$tokens[0][1] =~ /(.)$/;
+            $operator = $1;
+            $$tokens[0][1] =~ s/^.(.*)(\+\+|--)/$1/;
             $temp = $$tokens[0][1];
             shift(@$tokens);
             $str = $str . $temp;
             $str = $str . parse($tokens, 0, 1) . "\n";
-            $str = $str . $temp . " = " . $temp . " + 1"
+            $str = $str . $temp . $operator . " 1"
+        } elsif ($$tokens[0][0] eq "pre") {
+            #TODO fill this out.
         } elsif ($$tokens[0][0] eq "operator") {
             $str = $str . " " . $$tokens[0][1] . " ";
             shift(@$tokens);
