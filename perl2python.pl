@@ -66,7 +66,7 @@ sub lex {
 }
 
 sub getKeyWords {
-    return qr/(^(if|while|for|foreach|elsif|else|last|next|in))/s;
+    return qr/(^(if|while|foreach|for|elsif|else|last|next|in))/s;
 }
 
 sub getBuiltins {
@@ -104,7 +104,7 @@ sub parse {
             shift(@$tokens);
             $str = $str . $temp;
             $str = $str . parse($tokens, 0, 1) . "\n";
-            $str = $str . $temp . $operator . " 1"
+            $str = $str . $temp . $operator . "= 1"
         } elsif ($$tokens[0][0] eq "pre") {
             #TODO fill this out.
         } elsif ($$tokens[0][0] eq "operator") {
@@ -174,6 +174,7 @@ sub parseKeyword {
         $str = $str . ${shift(@$tokenRef)}[1] . " ";
         shift(@$tokenRef);
         $str = $str . parse($tokenRef, 0, 0);
+        print "the str is now " . $str;
         $str =~ s/\)$//;
         $str = $str . ":\n";
         if ($$tokenRef[0][1] eq "{") {
@@ -203,6 +204,23 @@ sub parseKeyword {
         $str = $str . parse($tokenRef, $indentLevel + 4, $readLine);
         $str =~ s/\s*$//;
         $str = $str . $temp;
+    } elsif ($$tokenRef[0][1] eq "foreach") {
+        $str = "for ";
+        shift(@$tokenRef);
+        $$tokenRef[0][1] =~ s/^.//;
+        $str = $str . $$tokenRef[0][1] . " in ";
+        shift(@$tokenRef);
+        shift(@$tokenRef);
+        $str = $str . parse($tokenRef, 0, 0);
+        $str =~ s/\)$//;
+        $str = $str . ":\n";
+        if ($$tokenRef[0][1] eq "{") {
+            $readLine = 0;
+            shift(@$tokenRef);
+        } else {
+            $readLine = 1;
+        }
+        $str = $str . parse($tokenRef, $indentLevel + 4, $readLine);
     } elsif ($$tokenRef[0][1] eq "next") {
         $str = "continue";
         shift(@$tokenRef);
