@@ -12,7 +12,7 @@ sub main {
 
     while (my $line = <>) {
         if ($line =~ /^#!/ and $. == 1) {
-            print ("#!/usr/bin/python2.7 -u\n");
+            print("#!/usr/bin/python2.7 -u\n");
         } else {
             my @result = lex($line);
             foreach my $item (@result) {
@@ -20,6 +20,10 @@ sub main {
                 print "word: " .  $$item[1] . "\n";
             }
             push(@tokens, @result);
+        }
+
+        if ($. == 1) {
+            print("import sys\n");
         }
     }
     
@@ -35,6 +39,8 @@ sub lex {
                    ["num", qr/(^[0-9]+(\.[0-9]+)?)/s],
                    ["keyWord", getKeyWords()],
                    ["builtin", getBuiltins()],
+                   ["diamond", qr/^(<[A-Z]*>)/],
+                   ["range", qr/^(\.\.)/],
                    ["post", qr/^(((\$|@|%|&)([a-z]|[0-9]|_|[A-Z])+)(\+\+|--))/],
                    ["pre", qr/^((\+\+|--)(\$|@|%|&)([a-z]|[0-9]|_|[A-Z])+)/],
                    ["variable", qr/(^(\$|@|%|&)([a-z]|[0-9]|_|[A-Z])+)/s],
@@ -70,7 +76,7 @@ sub getKeyWords {
 }
 
 sub getBuiltins {
-    return qr/(^print)/s;
+    return qr/^(print|chomp|split|join)/s;
 }
 
 sub getOperators {
@@ -104,9 +110,12 @@ sub parse {
             shift(@$tokens);
             $str = $str . $temp;
             $str = $str . parse($tokens, 0, 1) . "\n";
-            $str = $str . $temp . $operator . "= 1"
+            $str = $str . $temp . $operator . "= 1";
+        } elsif ($$token[0][0] eq "diamond") {
+            parseDiamond(shift(@$tokens));
         } elsif ($$tokens[0][0] eq "pre") {
-            #TODO fill this out.
+            #TODO fill this out. 
+            shift(@$tokens);
         } elsif ($$tokens[0][0] eq "operator") {
             $str = $str . " " . $$tokens[0][1] . " ";
             shift(@$tokens);
@@ -152,7 +161,7 @@ sub parse {
             last;
         } elsif ($$tokens[0][0] eq "error") {
             $str = $str . "#";
-            while (@$tokens and $$tokens[0][1] ne ";") {
+            while (@$tokens and not ($$tokens[0][1] =~ /[;\n}\)]/)) {
                 $str = $str . $$tokens[0][1];
                 shift(@$tokens);
             }
@@ -174,10 +183,9 @@ sub parseKeyword {
         $str = $str . ${shift(@$tokenRef)}[1] . " ";
         shift(@$tokenRef);
         $str = $str . parse($tokenRef, 0, 0);
-        print "the str is now " . $str;
         $str =~ s/\)$//;
         $str = $str . ":\n";
-        if ($$tokenRef[0][1] eq "{") {
+        if (@$tokenRef and $$tokenRef[0][1] eq "{") {
             $readLine = 0;
             shift(@$tokenRef);
         } else {
@@ -238,6 +246,7 @@ sub parseKeyword {
 sub parseBuiltin {
     my $tokenRef = $_[0];
     my $str = "";
+    my $temp;
     #TODO print to file
     if ($$tokenRef[0][1] eq "print") {
         $str = "print";
@@ -246,16 +255,42 @@ sub parseBuiltin {
             $str = $str . "(";
             shift(@$tokenRef);
             $str = $str . parse($tokenRef, 0, 1);
-            shift(@$tokenRef);
-            $str = $str . "\n";
-        } else {
-            $str = $str . " ";
-            $str = $str . parse($tokenRef, 0, 1);
         }
-
         $str =~ s/(\)?)$/,$1/;
         $str =~ s/\\n",(\)?)$/"$1/;
         $str =~ s/\s*\+?\s*""//;
+    } elsif ($$tokenRef[0][1] eq "chomp") {
+        shift(@$tokenRef);
+        if ($$tokenRef[0][0] eq "leftParen") {
+            shift(@$tokenRef);
+            $str = $str . parse($tokenRef, 0, 1);
+            $str =~ s/\)$//;
+        } else {
+            $str = $str . parse($tokenRef, 0, 1);
+        }
+        $str = $str . ".strip()";
+    } elsif ($$tokenRef[0][1] eq "join") {
+        shift(@$tokenRef);
+        if ($$tokenRef[0][0] eq "leftParen") {
+            shift(@$tokenRef);
+            $str = $$tokenRef[0][1] . ".join(";
+            shift(@$tokenRef);
+            shift(@$tokenRef);
+            $str = $str . parse($tokenRef, 0, 1);
+        } else {
+            $str = $$tokenRef[0][1] . ".join(";
+            shift(@$tokenRef);
+            shift(@$tokenRef);
+            $str = $str . parse($tokenRef, 0, 1) . ")";
+        }
+    #} elsif ($$tokenRef[0][1] eq "split") {
+    #    shift(@$tokenRef);
+    #    if () {
+    #
+    #    }
+    } else {
+        $str = $str . " ";
+        $str = $str . parse($tokenRef, 0, 1);
     }
 
     return $str;
