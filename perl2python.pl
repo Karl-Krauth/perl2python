@@ -24,10 +24,10 @@ sub main {
     }
 
     my @result = lex($program);
-    foreach my $item (@result) {
-        print "token: " . $$item[0] . "    ";
-        print "word: " .  $$item[1] . "\n";
-    }
+#    foreach my $item (@result) {
+#        print "token: " . $$item[0] . "    ";
+#        print "word: " .  $$item[1] . "\n";
+#    }
     push(@tokens, @result);
     
     print(parse(\@tokens, 0, 0));
@@ -47,9 +47,10 @@ sub lex {
                    ["post", qr/^(((\$|@|%|&)([a-z]|[0-9]|_|[A-Z])+)(\+\+|--))/],
                    ["pre", qr/^((\+\+|--)(\$|@|%|&)([a-z]|[0-9]|_|[A-Z])+)/],
                    ["concat", qr/^(\.=|\.)/],
+                   ["arrLen", qr/^(\$#[a-zA-Z_][a-zA-Z0-9_]*\[[^\]]*\])/],
                    ["array", qr/^(\$[a-zA-Z_][a-zA-Z0-9_]*\[[^\]]*\])/],
                    ["hash", qr/^(\$[a-zA-Z_][a-zA-Z0-9_]*\{[^\}]*\})/],
-                   ["variable", qr/(^(\$|@|%|&)([a-z]|_|[A-Z])([a-z]|_|[0-9]|[A-Z])*)/s],
+                   ["variable", qr/(^(\$|@|%|&)?([a-z]|_|[A-Z])([a-z]|_|[0-9]|[A-Z])*)/s],
                    ["semiColon", qr/^(;)/s],
                    ["comma", qr/^(,)/s],
                    ["leftParen", qr/^([{(])/s],
@@ -82,7 +83,7 @@ sub getKeyWords {
 }
 
 sub getBuiltins {
-    return qr/^(print|chomp|split|join)/s;
+    return qr/^(printf|print|chomp|split|join)[^a-zA-Z_0-9]/s;
 }
 
 sub getOperators {
@@ -114,29 +115,31 @@ sub parse {
         if ($$tokens[0][0] eq "comment") {
             $str = $str . $$tokens[0][1]; 
             shift(@$tokens);
+        } elsif ($$tokens[0][0] eq "arrLen") {
+            $str = $str . parseArrLen($$tokens[0][1]);
+            shift(@$tokens);
         } elsif ($$tokens[0][0] eq "variable") {
             $str = $str . parseVariable($$tokens[0][1]);
             shift(@$tokens);
         } elsif ($$tokens[0][0] =~ /^(array|hash)$/) {
             $str = $str . parseIndex($$tokens[0][1]);
             shift(@$tokens);
-        } elsif ($$tokens[0][0] eq "post") {
-            $$tokens[0][1] =~ /(.)$/;
-            $operator = $1;
-            $$tokens[0][1] =~ s/^.(.*)(\+\+|--)/$1/;
-            $temp = $$tokens[0][1];
+        } elsif ($$tokens[0][0] =~ /(post|pre)/) {
+            $$tokens[0][1] =~ s/(\$[A-Za-z_][A-Za-z_0-9]*)//;
+            $str = $str . $1;
+            $$tokens[0][1] =~ /(\+|-)/;
+            $str = $str . " " . $1 . "= 1";
             shift(@$tokens);
-            $str = $str . $temp;
-            $str = $str . parse($tokens, 0, 1) . "\n";
-            $str = $str . $temp . $operator . "= 1";
         } elsif ($$tokens[0][0] eq "diamond") {
             $str = $str . parseDiamond(${shift(@$tokens)}[1]);
-        } elsif ($$tokens[0][0] eq "pre") {
-            #TODO fill this out. 
         } elsif ($$tokens[0][0] eq "operator") {
-            $str = $str . " " . parseOperator($$tokens[0][1]) . " ";
-            $str =~ s/\n (not|~) $/\nnot /;
+            $str = $str . " " . parseOperator($$tokens[0][1]);
             shift(@$tokens);
+            if (@$tokens and $$tokens[0][1] eq "=") {
+                $str = $str . ${shift(@$tokens)}[1];
+            }
+            $str = $str . " ";
+            $str =~ s/\n (not|~) $/\nnot /;
         } elsif ($$tokens[0][0] eq "comma") {
             $str = $str . ", ";
             shift(@$tokens);
@@ -345,7 +348,7 @@ sub parseVariable {
     if ($var eq '@ARGV') {
         $str = "sys.argv[1:]";
     } else {
-        $var =~ s/^.//;
+        $var =~ s/^(\$|%|&|@)//;
         $str = $var;
     }
 
@@ -424,7 +427,7 @@ sub parsePrint {
     $str = $str . " " . parse($tokenRef, 0, 1);
 
     $str =~ s/(\)?)$/,/;
-    $str =~ s/(,\s*"\n",\s*)$//;
+    $str =~ s/(,\s*"\\n",\s*)$//;
     $str =~ s/\\n",$/"/;
     $str =~ s/\s*\+?\s+""//;
 
