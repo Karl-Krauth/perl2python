@@ -41,6 +41,7 @@ sub lex {
                    ["builtin", getBuiltins()],
                    ["diamond", qr/^(<[A-Z]*>)/],
                    ["range", qr/^(\.\.)/],
+                   ["stringComp", qr/^(eq|ne)/],
                    ["post", qr/^(((\$|@|%|&)([a-z]|[0-9]|_|[A-Z])+)(\+\+|--))/],
                    ["pre", qr/^((\+\+|--)(\$|@|%|&)([a-z]|[0-9]|_|[A-Z])+)/],
                    ["variable", qr/(^(\$|@|%|&)([a-z]|[0-9]|_|[A-Z])+)/s],
@@ -95,7 +96,9 @@ sub parse {
             $str = $str . " " x $indentLevel;
         }
 
-        if ($$tokens[0][0] eq "comment") {
+        if (@$tokens >= 2 and $$tokens[1][0] eq "range") {
+            $str = $str . parseRange(${shift(@$tokens)}[1], $tokens);
+        } elsif ($$tokens[0][0] eq "comment") {
             $str = $str . $$tokens[0][1]; 
             shift(@$tokens);
         } elsif ($$tokens[0][0] eq "variable") {
@@ -111,10 +114,17 @@ sub parse {
             $str = $str . $temp;
             $str = $str . parse($tokens, 0, 1) . "\n";
             $str = $str . $temp . $operator . "= 1";
-        } elsif ($$token[0][0] eq "diamond") {
-            parseDiamond(shift(@$tokens));
+        } elsif ($$tokens[0][0] eq "diamond") {
+            $str = $str . parseDiamond(${shift(@$tokens)}[1]);
         } elsif ($$tokens[0][0] eq "pre") {
             #TODO fill this out. 
+            shift(@$tokens);
+        } elsif ($$tokens[0][0] eq "stringComp") {
+            if ($$tokens[0][1] eq "eq") {
+                $str = $str . " " . "==" . " ";
+            } else {
+                $str = $str . " " . "!=" . " ";
+            }
             shift(@$tokens);
         } elsif ($$tokens[0][0] eq "operator") {
             $str = $str . " " . $$tokens[0][1] . " ";
@@ -148,8 +158,13 @@ sub parse {
                 $str = $str . parse($tokens, $indentLevel + 4, 0);
             } else {
                 shift(@$tokens);
-                $str = $str . "(";
-                $str = $str . parse($tokens, $indentLevel, $readLine);
+                $temp = "(";
+                $temp = $temp . parse($tokens, $indentLevel, $readLine);
+                if (@$tokens and $$tokens[0][0] eq "range") {
+                    $str = $str . parseRange($temp, $tokens);
+                } else {
+                    $str = $str . $temp;
+                }
             }
         } elsif ($$tokens[0][0] eq "rightParen") {
             if ($$tokens[0][1] eq "}") {
@@ -241,6 +256,32 @@ sub parseKeyword {
     }
 
     return $str; 
+}
+
+sub parseRange {
+    my $range1 = $_[0];
+    my $tokenRef = $_[1];
+    my $str = "xrange(" . $range1 . ", ";
+    shift(@$tokenRef);
+
+    if ($$tokenRef[0][1] eq "(") {
+        $str = $str . ${shift(@$tokenRef)}[1];
+        $str = $str . parse($tokenRef, 0, 0);
+    } else {
+        $str = $str . ${shift(@$tokenRef)}[1];
+    }
+    
+    $str = $str . ")";
+    return $str;
+}
+
+sub parseDiamond {
+    my $diamond = $_[0];
+    my $str = "";
+
+    if ($diamond =~ /<STDIN>/) {
+        $str = "sys.stdin.readline()";
+    }
 }
 
 sub parseBuiltin {
