@@ -46,6 +46,7 @@ sub lex {
                    ["range", qr/^(\.\.)/],
                    ["post", qr/^(((\$|@|%|&)([a-z]|[0-9]|_|[A-Z])+)(\+\+|--))/],
                    ["pre", qr/^((\+\+|--)(\$|@|%|&)([a-z]|[0-9]|_|[A-Z])+)/],
+                   ["concat", qr/^(\.=|\.)/],
                    ["array", qr/^(\$[a-zA-Z_][a-zA-Z0-9_]*\[[^\]]*\])/],
                    ["hash", qr/^(\$[a-zA-Z_][a-zA-Z0-9_]*\{[^\}]*\})/],
                    ["variable", qr/(^(\$|@|%|&)([a-z]|_|[A-Z])([a-z]|_|[0-9]|[A-Z])*)/s],
@@ -100,15 +101,21 @@ sub parse {
             $str = $str . " " x $indentLevel;
         }
 
-        if (@$tokens >= 2 and $$tokens[1][0] eq "range" 
-        and $$tokens[0][1] ne ")") {
-            $str = $str . parseRange(${shift(@$tokens)}[1], $tokens);
-        } elsif ($$tokens[0][0] eq "comment") {
+        if (@$tokens >= 2 and $$tokens[0][1] ne ")") {
+            if ($$tokens[1][0] eq "range") { 
+                $str = $str . parseRange(${shift(@$tokens)}[1], $tokens);
+                next;
+            } elsif ($$tokens[1][0] eq "concat") {
+                $str = $str . parseConcat(${shift(@$tokens)}[1], $tokens);
+                next;
+            }
+        } 
+        
+        if ($$tokens[0][0] eq "comment") {
             $str = $str . $$tokens[0][1]; 
             shift(@$tokens);
         } elsif ($$tokens[0][0] eq "variable") {
-            $$tokens[0][1] =~ s/^(.)//;
-            $str = $str . $$tokens[0][1];
+            $str = $str . parseVariable($$tokens[0][1]);
             shift(@$tokens);
         } elsif ($$tokens[0][0] =~ /^(array|hash)$/) {
             $str = $str . parseIndex($$tokens[0][1]);
@@ -163,6 +170,8 @@ sub parse {
                 $temp = $temp . parse($tokens, $indentLevel, $readLine);
                 if (@$tokens and $$tokens[0][0] eq "range") {
                     $str = $str . parseRange($temp, $tokens);
+                } elsif(@$tokens and $$tokens[0][0] eq "concat") {
+                    $str = $str . parseRange($temp, $tokens);    
                 } else {
                     $str = $str . $temp;
                 }
@@ -308,6 +317,38 @@ sub parseRange {
     }
     
     $str = $str . ")";
+    return $str;
+}
+
+sub parseConcat {
+    (my $prevStr, my $tokenRef) = @_;
+    my $str = "";
+
+    $$tokenRef[0][1] =~ s/\./\+/;
+    if ($$tokenRef[0][1] eq "+") {
+        $prevStr = "str(" . $prevStr . ")"
+    }
+
+    $str = $prevStr . " " . ${shift(@$tokenRef)}[1] . " str(";
+    if ($$tokenRef[0][0] eq "leftParen") {
+        $str = $str . parse($tokenRef, 0, 0) . ")";
+    } else {
+        $str = $str . ${shift(@$tokenRef)}[1] . ")"
+    }
+
+    return $str;
+}
+
+sub parseVariable {
+    my $var = $_[0];
+    my $str = "";
+    if ($var eq '@ARGV') {
+        $str = "sys.argv[1:]";
+    } else {
+        $var =~ s/^.//;
+        $str = $var;
+    }
+
     return $str;
 }
 
