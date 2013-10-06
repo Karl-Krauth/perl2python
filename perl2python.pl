@@ -55,8 +55,8 @@ sub lex {
                    ["variable", qr/(^(\$|@|%|&)?([a-z]|_|[A-Z])([a-z]|_|[0-9]|[A-Z])*)/s],
                    ["semiColon", qr/^(;)/s],
                    ["comma", qr/^(,)/s],
-                   ["leftParen", qr/^([{(])/s],
-                   ["rightParen", qr/^([})\]])/s],
+                   ["leftParen", qr/^([\{\(])/s],
+                   ["rightParen", qr/^([\}\)\]])/s],
                    ["assignment", qr/^(=)/s],
                    ["error", qr/^([^\n]\n?)/s]);
 
@@ -128,7 +128,6 @@ sub parse {
             shift(@$tokens);
         } elsif ($$tokens[0][0] =~ /^(array|hash)$/) {
             $str = $str . parseIndex($tokens);
-            shift(@$tokens);
         } elsif ($$tokens[0][0] =~ /(post|pre)/) {
             $$tokens[0][1] =~ s/\$([A-Za-z_][A-Za-z_0-9]*)//;
             $str = $str . $1;
@@ -318,6 +317,7 @@ sub parseRange {
     my $str = "xrange(" . $range1 . ", ";
     shift(@$tokenRef);
 
+    $range1 =~ s/^\$//;
     if ($$tokenRef[0][1] eq "(") {
         $str = $str . ${shift(@$tokenRef)}[1];
         $str = $str . parse($tokenRef, 0, 0);
@@ -376,7 +376,7 @@ sub parseIndex {
         $str = $1 . "[";
         shift(@$tokenRef);     
         $str = $str . parse($tokenRef, 0, 0);
-        $str =~ s/\n$/}/;
+        $str =~ s/\n$/\]/;
     }
 
     return $str;
