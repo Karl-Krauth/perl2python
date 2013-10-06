@@ -39,7 +39,7 @@ sub lex {
     #Generate all regexps to match tokens.
     my @regexps = (["comment", qr/(^#[^\n]*\n)/s],
                    ["string", qr/(^("(\\.|[^\\"])*"|'[^']*'))/s],
-                   ["regex", qr/^=~\s*((m?\/(\\.|[^\\\/])*\/|s\/(\\.|[^\\\/])*\/(\\.|[^\\\/])*\/))/s],
+                   ["regex", qr/^=~\s*((m?\/(\\.|[^\\\/])*\/|s\/(\\.|[^\\\/])*\/(\\.|[^\\\/])*\/)[a-z])/s],
                    ["num", qr/(^([0-9]+(\.[0-9]+)?|[0-9]*\.[0-9]+))/s],
                    ["keyWord", getKeyWords()],
                    ["builtin", getBuiltins()],
@@ -111,7 +111,7 @@ sub parse {
                 $str = $str . parseConcat(${shift(@$tokens)}[1], $tokens);
                 next;
             } elsif ($$tokens[1][0] eq "regex") {
-                $str = $str . parseRegex(${shift(@$tokens)}[1], $tokens[0][1]);
+                $str = $str . parseRegex(${shift(@$tokens)}[1], $$tokens[0][1]);
                 shift(@$tokens);
                 next;
             }
@@ -388,6 +388,8 @@ sub parseDiamond {
 
     if ($diamond =~ /<STDIN>/) {
         $str = "sys.stdin.readline()";
+    } elsif ($diamond eq "<>") {
+        $str = "fileinput.input()"
     }
 }
 
@@ -397,10 +399,11 @@ sub parseDiamond {
 sub parseBuiltin {
     my $tokenRef = $_[0];
     my $str = "";
-    my $temp;
-    #TODO print to file
+
     if ($$tokenRef[0][1] eq "print") {
         $str = parsePrint($tokenRef);
+    } elsif ($$tokenRef[0][1] eq "printf") {
+        $str = parsePrintf($tokenRef);
     } elsif ($$tokenRef[0][1] eq "chomp") {
         $str = parseChomp($tokenRef);
     } elsif ($$tokenRef[0][1] eq "join") {
@@ -415,6 +418,27 @@ sub parseBuiltin {
     return $str;
 }
 
+sub parsePrintf {
+    my $tokenRef = $_[0];
+    my $str = "sys.stdout.write(";
+    my @tokens = ();
+
+    shift(@$tokenRef);
+    if ($$tokenRef[0][1] eq "(") {
+        shift(@$tokenRef);
+        @tokens = findNext($tokenRef, ",");
+        $str = $str . parse(\@tokens, 0, 0) . " % (";
+        shift(@$tokenRef);
+        $str = $str . parse($tokenRef, 0, 0) . ")";
+    } else {
+        @tokens = findNext($tokenRef, ",");
+        $str = $str . parse(\@tokens, 0, 0) . " % (";
+        shift(@$tokenRef);
+        $str = $str . parse($tokenRef, 0, 0) . "))";
+    }
+
+    return $str;
+}
 
 sub parsePrint {
     my $tokenRef = $_[0];
@@ -501,10 +525,10 @@ sub parseArrLen {
     my $str;
 
     if ($var eq "\$#ARGV") {
-        $str = "(len(sys.argv) - 1)";
+        $str = "(len(sys.argv) - 2)";
     } else {
         $var =~ s/^\$#//;
-        $str = "len($var)";
+        $str = "(len($var) - 1)";
     }
 
     return $str;
@@ -538,8 +562,7 @@ sub parseRegex {
 
     $regex =~ s/\/([a-z]*)$/\//;    
     $options = $1;
-#"regex",
-#qr/^=~\s*((m?\/(\\.|[^\\\/])*\/|s\/(\\.|[^\\\/])*\/(\\.|[^\\\/])*\/))/s]    
+    
     if ($regex =~ s/^s//) {
         $regex =~ /^\/(.*)\/(.*)\/$/;
         $str = $val . " = " . "re.sub('$1', '$2', $val)";
