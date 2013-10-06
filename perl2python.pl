@@ -19,7 +19,7 @@ sub main {
         }
 
         if ($. == 1) {
-            print("import sys\n");
+            print("import re, sys, fileinput\n");
         }
     }
 
@@ -262,7 +262,11 @@ sub parseWhile {
     $str = $str . parse($tokenRef, 0, 0);
     $str =~ s/\)$/:\n/;
     $str =~ s/^while\s*:\n$/while True:\n/;
-
+    if ($str =~ /([a-zA-Z_][a-zA-Z_0-9]*)\s*=\s*sys\.stdin\.readline\(\)/) {
+        $str = "for $1 in sys.stdin:\n";
+    } elsif ($str =~ /([a-zA-Z_][a-zA-Z_0-9]*)\s*=\s*fileinput.input\(\)/) {
+        $str = "for $1 in fileinput.input():\n";
+    }
     #parse the body
     shift(@$tokenRef);
     $str = $str . parse($tokenRef, $indentLevel + 4, 0); 
