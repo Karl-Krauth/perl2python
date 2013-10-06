@@ -24,10 +24,10 @@ sub main {
     }
 
     my @result = lex($program);
-#    foreach my $item (@result) {
-#        print "token: " . $$item[0] . "    ";
-#        print "word: " .  $$item[1] . "\n";
-#    }
+    foreach my $item (@result) {
+        print "token: " . $$item[0] . "    ";
+        print "word: " .  $$item[1] . "\n";
+    }
     push(@tokens, @result);
     
     print(parse(\@tokens, 0, 0));
@@ -83,7 +83,7 @@ sub getKeyWords {
 }
 
 sub getBuiltins {
-    return qr/^(printf|print|chomp|split|join)[^a-zA-Z_0-9]/s;
+    return qr/^(printf|print|chomp|split|join)/s;
 }
 
 sub getOperators {
@@ -125,7 +125,7 @@ sub parse {
             $str = $str . parseIndex($$tokens[0][1]);
             shift(@$tokens);
         } elsif ($$tokens[0][0] =~ /(post|pre)/) {
-            $$tokens[0][1] =~ s/(\$[A-Za-z_][A-Za-z_0-9]*)//;
+            $$tokens[0][1] =~ s/\$([A-Za-z_][A-Za-z_0-9]*)//;
             $str = $str . $1;
             $$tokens[0][1] =~ /(\+|-)/;
             $str = $str . " " . $1 . "= 1";
@@ -279,9 +279,9 @@ sub parseFor {
     shift(@$tokenRef);
     if ($$tokenRef[0][0] eq "variable") {
         $$tokenRef[0][1] =~ s/^.//;
-        $str = "for " . ${shift(@$tokenRef)}[1] . "in ";
+        $str = "for " . ${shift(@$tokenRef)}[1] . " in ";
         shift(@$tokenRef);
-        $str = $str . parse($tokenRef, $indentLevel + 4, 0);
+        $str = $str . parse($tokenRef, 0, 0);
         $str =~ s/\)$//;
     } else {
         shift(@$tokenRef);
@@ -403,11 +403,8 @@ sub parseBuiltin {
         $str = parseChomp($tokenRef);
     } elsif ($$tokenRef[0][1] eq "join") {
         $str = parseJoin($tokenRef);
-    #} elsif ($$tokenRef[0][1] eq "split") {
-    #    shift(@$tokenRef);
-    #    if () {
-    #
-    #    }
+    } elsif ($$tokenRef[0][1] eq "split") {
+        $str = parseSplit($tokenRef);
     } else {
         $str = $str . " ";
         $str = $str . parse($tokenRef, 0, 1);
@@ -447,6 +444,33 @@ sub parseChomp {
         $str = $str . parse($tokenRef, 0, 1);
     }
     $str = $str . ".strip()";
+
+    return $str;
+}
+
+sub parseSplit {
+    my $tokenRef = $_[0];
+    my $str = "";
+    my @temp = ();    
+print "$$tokenRef[1][1]" . "\n\n\n";
+    shift(@$tokenRef);
+    if ($$tokenRef[0][0] eq "leftParen") {
+        shift(@$tokenRef);
+        while ($$tokenRef[0][0] ne "comma") {
+           push(@temp, shift(@$tokenRef));
+        }
+        shift(@$tokenRef);
+        $str = parse($tokenRef, 0, 0);
+        $str =~ s/\)$//;
+        $str = $str . ".split(" . parse(\@temp, 0, 0) . ")";
+    } else {
+        while ($$tokenRef[0][0] ne "comma") {
+            push(@temp, shift(@$tokenRef));
+        }
+        shift(@$tokenRef);
+        $str = parse($tokenRef, 0, 0);
+        $str = $str . ".split(" . parse(\@temp, 0, 0) . ")";
+    }
 
     return $str;
 }
@@ -503,6 +527,8 @@ sub parseStr {
         $str =~ s/\\\\/unlikelyword123/g;
         $str =~ s/([^\\])\$(([a-z]|[A-Z]|[0-9]|_)+)/$1" \+ str($2) \+ "/g;
         $str =~ s/([^\\])\$\{(([a-z]|[A-Z]|[0-9]|_)+)\}/$1" \+ str($2) \+ "/g;
+        $str =~ s/([^\\])\@(([a-z]|[A-Z]|[0-9]|_)+)/$1" \+ ' '.join(map(str, $2)) \+ "/g;
+        $str =~ s/([^\\])\@\{(([a-z]|[A-Z]|[0-9]|_)+)\}/$1" \+ ' '.join(map(str, $2)) \+ "/g;
         $str =~ s/unlikelyword123/\\\\/g;
         $str =~ s/\+\s*""\s*\+/ \+ /g;
         $str =~ s/""\s*\+\s*//g;
@@ -510,36 +536,6 @@ sub parseStr {
     }
 
     return $str;
-}
-
-sub findNext {
-    (my $char, my $tokenRef) = @_;
-    my @tokens = ();
-    
-    while ($$tokenRef[0][1] ne $char) {
-        push(@tokens, shift(@$tokenRef));
-    }
-
-    return @tokens;
-}
-
-sub findMatching {
-    (my $char, my $tokenRef) = @_;
-    my @tokens = ();
-    my %matches = ("(" => ")",
-                   "{" => "}");    
-
-    while ($$tokenRef[0][1] ne $matches{$char}) {
-        if ($$tokenRef[0][1] eq $char) {
-            push(@tokens, shift(@$tokenRef));
-            push(@tokens, findMatching($char, $tokenRef));
-            push(@tokens, shift(@$tokenRef));
-        } else {
-            push(@tokens, shift(@$tokenRef));
-        }
-    }
-
-    return @tokens;
 }
 
 main();
