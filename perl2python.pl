@@ -99,90 +99,70 @@ sub parse {
     my $operator;
 
     while (@$tokens) {
+        $temp = "";
         if ($str eq "" or $str =~ /\n$/) {
             $str = $str . " " x $indentLevel;
         }
 
-        if (@$tokens >= 2 and $$tokens[0][1] ne ")") {
-            if ($$tokens[1][0] eq "range") { 
-                $str = $str . parseRange(${shift(@$tokens)}[1], $tokens);
-                next;
-            } elsif ($$tokens[1][0] eq "concat") {
-                $str = $str . parseConcat(${shift(@$tokens)}[1], $tokens);
-                next;
-            } elsif ($$tokens[1][0] eq "regex") {
-                $str = $str . parseRegex(${shift(@$tokens)}[1], $$tokens[0][1]);
-                shift(@$tokens);
-                next;
-            }
-        } 
-        
         if ($$tokens[0][0] eq "comment") {
-            $str = $str . $$tokens[0][1]; 
+            $temp = $$tokens[0][1]; 
             shift(@$tokens);
         } elsif ($$tokens[0][0] eq "arrLen") {
-            $str = $str . parseArrLen($$tokens[0][1]);
+            $temp = parseArrLen($$tokens[0][1]);
             shift(@$tokens);
         } elsif ($$tokens[0][0] eq "variable") {
-            $str = $str . parseVariable($$tokens[0][1]);
+            $temp = parseVariable($$tokens[0][1]);
             shift(@$tokens);
         } elsif ($$tokens[0][0] =~ /^(array|hash)$/) {
-            $str = $str . parseIndex($tokens);
+            $temp = parseIndex($tokens);
         } elsif ($$tokens[0][0] =~ /(post|pre)/) {
             $$tokens[0][1] =~ s/\$([A-Za-z_][A-Za-z_0-9]*)//;
-            $str = $str . $1;
+            $temp = $1;
             $$tokens[0][1] =~ /(\+|-)/;
-            $str = $str . " " . $1 . "= 1";
+            $temp = $temp . " " . $1 . "= 1";
             shift(@$tokens);
         } elsif ($$tokens[0][0] eq "diamond") {
-            $str = $str . parseDiamond(${shift(@$tokens)}[1]);
+            $temp = parseDiamond(${shift(@$tokens)}[1]);
         } elsif ($$tokens[0][0] eq "operator") {
-            $str = $str . " " . parseOperator($$tokens[0][1]);
+            $temp = " " . parseOperator($$tokens[0][1]);
             shift(@$tokens);
             if (@$tokens and $$tokens[0][1] eq "=") {
-                $str = $str . ${shift(@$tokens)}[1];
+                $temp = $temp . ${shift(@$tokens)}[1];
             }
-            $str = $str . " ";
-            $str =~ s/\n (not|~) $/\n$1 /;
+            $temp = $temp . " ";
+            if ($str =~ /\n$/) {
+                $temp =~ s/^\s*(not|~)$/$1/;
+            } 
         } elsif ($$tokens[0][0] eq "comma") {
-            $str = $str . ", ";
+            $temp = ", ";
             shift(@$tokens);
         } elsif ($$tokens[0][0] eq "assignment") {
-            $str = $str . " = ";
+            $temp = " = ";
             shift(@$tokens);
         } elsif ($$tokens[0][0] eq "string") {
-            $str = $str . parseStr($$tokens[0][1]);
+            $temp = parseStr($$tokens[0][1]);
             shift(@$tokens);
         } elsif ($$tokens[0][0] eq "num") {
-            $str = $str . $$tokens[0][1];
+            $temp = $$tokens[0][1];
             shift(@$tokens);
         } elsif ($$tokens[0][0] eq "builtin") {
-            $str = $str . parseBuiltin($tokens, $indentLevel);
+            $temp = parseBuiltin($tokens, $indentLevel);
         } elsif ($$tokens[0][0] eq "keyWord") {
-            $str = $str . parseKeyword($tokens, $indentLevel);
+            $temp = parseKeyword($tokens, $indentLevel);
         } elsif ($$tokens[0][0] eq "semiColon") {
             if ($readLine) {
                 last;
             } else {
-                $str = $str . "\n";
+                $temp = "\n";
                 shift(@$tokens);
             }
         } elsif ($$tokens[0][0] eq "leftParen") {
             if ($$tokens[0][1] eq "{") {
                 shift(@$tokens);
-                $str = $str . parse($tokens, $indentLevel + 4, 0);
+                $temp = parse($tokens, $indentLevel + 4, 0);
             } else {
                 $temp = ${shift(@$tokens)}[1];
-                $temp = $temp . parse($tokens, $indentLevel, $readLine);
-                if (@$tokens and $$tokens[0][0] eq "range") {
-                    $str = $str . parseRange($temp, $tokens);
-                } elsif(@$tokens and $$tokens[0][0] eq "concat") {
-                    $str = $str . parseRange($temp, $tokens);
-                } elsif (@$tokens and $$tokens[0][0] eq "regex") { 
-                    $str = $str . parseRegex($temp, $tokens);  
-                } else {
-                    $str = $str . $temp;
-                }
+                $temp = $temp . parse($tokens, 0, $readLine);
             }
         } elsif ($$tokens[0][0] eq "rightParen") {
             if ($$tokens[0][1] eq "}") {
@@ -193,15 +173,29 @@ sub parse {
             shift(@$tokens);
             last;
         } elsif ($$tokens[0][0] eq "error") {
-            $str = $str . "#";
+            $temp = "#";
             while (@$tokens and not ($$tokens[0][1] =~ /[;\n}\)]/)) {
-                $str = $str . $$tokens[0][1];
+                $temp = $temp . $$tokens[0][1];
                 shift(@$tokens);
             }
         } else {
             shift(@$tokens);
         }
 
+        if (@$tokens) {
+            if ($$tokens[0][0] eq "range") { 
+                $str = $str . parseRange($temp, $tokens);
+            } elsif ($$tokens[0][0] eq "concat") {
+                $str = $str . parseConcat($temp, $tokens);
+            } elsif ($$tokens[0][0] eq "regex") {
+                $str = $str . parseRegex($temp, $$tokens[0][1]);
+                shift(@$tokens);
+            } else {
+                $str = $str . $temp;
+            }
+        } else {
+            $str = $str . $temp;
+        } 
     }
     return $str;
 }
@@ -317,15 +311,25 @@ sub parseRange {
     my $str = "xrange(" . $range1 . ", ";
     shift(@$tokenRef);
 
-    $range1 =~ s/^\$//;
-    if ($$tokenRef[0][1] eq "(") {
+    $str = $str . parseNext($tokenRef);
+    $str = $str . " + 1)";
+    return $str;
+}
+
+sub parseNext {
+    my $tokenRef = $_[0];
+    my $str = "";
+
+    if ($$tokenRef[0][0] eq "leftParen") {
         $str = $str . ${shift(@$tokenRef)}[1];
         $str = $str . parse($tokenRef, 0, 0);
+    } elsif ($$tokenRef[0][0] =~ /(array|hash)/) {
+        $str = $str . parseIndex($tokenRef);
     } else {
-        $str = $str . ${shift(@$tokenRef)}[1];
+        my @temp = (shift(@$tokenRef));
+        $str = $str . parse(\@temp, 0, 0);
     }
-    
-    $str = $str . " + 1)";
+
     return $str;
 }
 
@@ -339,11 +343,7 @@ sub parseConcat {
     }
 
     $str = $prevStr . " " . ${shift(@$tokenRef)}[1] . " str(";
-    if ($$tokenRef[0][0] eq "leftParen") {
-        $str = $str . parse($tokenRef, 0, 0) . ")";
-    } else {
-        $str = $str . ${shift(@$tokenRef)}[1] . ")"
-    }
+    $str = $str . parseNext($tokenRef) . ")";
 
     return $str;
 }
