@@ -46,8 +46,8 @@ $var1
 
 #assigning negative floating point numbers
 
-$var4 = -0000000.234 * 0.012 + -3;
-$var5=3*-.433+123.;
+$var4 = -0.234 * 0.012 + -3;
+$var5=3*-0.433+123.0;
 #printing of variables
 
 print $var1 , "\n";
@@ -81,5 +81,5 @@ $___v_a_r_3__
 
 #printing of constants, strings and variables as arguments
 
-print 3.112313, " ",  -4*5, " ", 0.1, " ", $var4, " ", 0000000.1, " ",  .7898, "\n";
+print 3.112313, " ",  -4*5, " ", 0.1, " ", $var4, " ", 0.1, " ",  0.7898, "\n";
 print $var5    ,    "\n";

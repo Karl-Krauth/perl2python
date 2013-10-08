@@ -48,9 +48,9 @@ for
 (
     $i = 0
 ;
-$i < 200
+$i < 200 and
+ $var1 eq "hello world"
 ;$i=$i+1
-and $var1 eq "hello world"
 )
 {}
 
