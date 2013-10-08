@@ -29,6 +29,7 @@ sub main {
 #        print "token: " . $$item[0] . "    ";
 #        print "word: " .  $$item[1] . "\n";
 #    }
+
     push(@tokens, @result);
     
     print(parse(\@tokens, 0, 0));
@@ -52,19 +53,19 @@ sub lex {
                    ["arrLen", qr/^(\$#[a-zA-Z_][a-zA-Z0-9_]*)/],
                    ["array", qr/^(\$[a-zA-Z_][a-zA-Z0-9_]*\[)/],
                    ["hash", qr/^(\$[a-zA-Z_][a-zA-Z0-9_]*\{[^\}]*\})/],
-                   ["leftRightOp", qr/^(\|\||&&|and|or|not|>>|<<)/],
-                   ["leftOp", qr/^(!|~)/],
-                   ["arithmetic", qr/^(\||\^\|&|\+|-|\/|%|\*\*|\*)/],
+                   ["leftRightOp", qr/^(\|\||&&|and|or|>>|<<|&|\||\^)/],
+                   ["arithmetic", qr/^(\||\^\|&|\+|-|\/|\*\*|\*)/],
                    ["stringComp", qr/^(ne|eq|lt|gt)/],
                    ["arithComp", qr/^(<=|>=|!=|==|>|<)/],
+                   ["leftOp", qr/^(!|~|not)/],
                    ["mod", qr/^(%)/],
-                   ["variable", qr/(^(\$|@|%|&)?([a-z]|_|[A-Z])([a-z]|_|[0-9]|[A-Z])*)/s],
+                   ["variable", qr/(^(\$|@|%|&)([a-z]|_|[A-Z])([a-z]|_|[0-9]|[A-Z])*)/s],
                    ["semiColon", qr/^(;)/s],
                    ["comma", qr/^(,)/s],
                    ["assignment", qr/^(=)/s],
                    ["leftParen", qr/^([\{\(])/s],
                    ["rightParen", qr/^([\}\)\]])/s],
-                   ["error", qr/^(([^\n]\n?|[.\n]$))/s]);
+                   ["error", qr/^((.))/s]);
 
     while (not ($str eq "")) {
         my @result = ();
@@ -122,7 +123,7 @@ sub parse {
             case "num"        {$temp = shiftVal($tokens)}
             case "builtin"    {$temp = parseBuiltin($tokens, $indentLevel)}
             case "keyWord"    {$temp = parseKeyword($tokens, $indentLevel)}
-            case "leftOp"     {$temp = shiftVal($tokens) . " "}
+            case "leftOp"     {$temp = parseOperator(shiftVal($tokens)) . " "}
             case "leftParen"  {$temp = parseLeftParen($tokens, $indentLevel)}
             case "error"      {$temp = errorRecovery($tokens)}
             case "rightParen" {$str .= parseRightParen(shiftVal($tokens), $indentLevel);
@@ -131,6 +132,7 @@ sub parse {
                                else {$temp = "\n"; shift(@$tokens)}}
         }
         last if $break;
+
         if (scalar @$tokens) {
             $str = $str . lookAhead($temp, $tokens);
         } else {
@@ -144,12 +146,11 @@ sub parse {
 sub errorRecovery {
     my $tokenRef = $_[0];
     my $str = "#" . shiftVal($tokenRef);
-    while (scalar @$tokenRef and not $$tokenRef[0][1] =~ /(^;$|\n)/) {
+    while (scalar @$tokenRef and not $$tokenRef[0][0] =~ /(Paren|semiColon)/) {
         $str = $str . shiftVal($tokenRef);
     }
-
-    shift(@$tokenRef);
-    return $str . "\n";
+    
+    return $str;
 }
 
 sub shiftVal {
@@ -173,7 +174,7 @@ sub parseLeftParen {
     (my $tokenRef, my $indentLevel) = @_;
     my $str = "";
 
-    if ($$tokenRef[0][1]) {
+    if ($$tokenRef[0][1] eq "{") {
         shift(@$tokenRef);
         $str = parse($tokenRef, $indentLevel + 4, 0);
     } else {
@@ -313,7 +314,6 @@ sub lookAhead {
     if ($$tokens[0][1] =~ /^.=/) {
         $assign = 1;
     }
-
     if ($$tokens[0][0] eq "range") { 
             $str = parseRange($prevStr, $tokens);
     } elsif ($$tokens[0][0] eq "concat") {
@@ -321,6 +321,8 @@ sub lookAhead {
     } elsif ($$tokens[0][0] eq "regex") {
         $str = parseRegex($prevStr, $$tokens[0][1]);
         shift(@$tokens);
+    } elsif ($$tokens[0][0] eq "leftRightOp") {
+        $str = parseCast("", $prevStr, $assign, $tokens);
     } elsif ($$tokens[0][0] eq "arithmetic") {
         $str = parseCast("", $prevStr, $assign, $tokens);
     } elsif ($$tokens[0][0] eq "arithComp") {
@@ -343,7 +345,6 @@ sub parseCast {
     my $str = "";
     my $operator;
     my $nextStr; 
-
     $operator = parseOperator(shiftVal($tokenRef));
     if ($cast ne "") {
         if (not $assign and $prevStr ne "") {
@@ -353,7 +354,7 @@ sub parseCast {
     } else {
         $nextStr = parseNext($tokenRef);
     }
-    $str = $prevStr . " " . $operator . " " . $nextStr;
+    $str = $prevStr . " " . parseOperator($operator) . " " . $nextStr;
     
     if (@$tokenRef) {
         $str = $str . lookAhead("", $tokenRef);
@@ -381,6 +382,10 @@ sub parseNext {
         $str = $str . parse($tokenRef, 0, 0);
     } elsif ($$tokenRef[0][0] =~ /(array|hash)/) {
         $str = $str . parseIndex($tokenRef);
+    } elsif ($$tokenRef[0][0] eq "builtin") {
+        $str = parseBuiltin($tokenRef);
+    } elsif ($$tokenRef[0][0] eq "arithmetic") {
+        $str = shiftVal($tokenRef) . parseNext($tokenRef); 
     } else {
         my @temp = (shift(@$tokenRef));
         $str = $str . parse(\@temp, 0, 0);
@@ -502,6 +507,7 @@ sub parsePrint {
     $str =~ s/\s*\+?\s+""//;
     $str =~ s/unlikelyword123/\\\\/g;
     $str =~ s/print\s*,\s*$//;
+    $str =~ s/,\s*,$/,/;
     return $str;
 }
 
@@ -529,6 +535,7 @@ sub parseChomp {
 sub parseSplit {
     my $tokenRef = $_[0];
     my $str = "";
+
     my @temp = ();    
     shift(@$tokenRef);
     if ($$tokenRef[0][0] eq "leftParen") {
@@ -540,8 +547,13 @@ sub parseSplit {
     } else {
         @temp = findNext($tokenRef, ",");
         shift(@$tokenRef);
-        $str = "(" . parse($tokenRef, 0, 0) . ")";
-        $str = $str . ".split(" . parse(\@temp, 0, 0) . ")";
+        $str = "(" . parse($tokenRef, 0, 1) . ")";
+        $str = $str . ".split(" . parse(\@temp, 0, 1) . ")";
+    }
+
+    if ($str =~ /\.split\(([a-zA-Z_][a-zA-Z_0-9]*|'[^']*'|"(\\.|[^\\"])*"),/) {
+        $str =~ s/\.split\(/.split([/;
+        $str =~ s/\)$/])/;
     }
 
     return $str;
@@ -565,6 +577,12 @@ sub parseJoin {
         shift(@$tokenRef);
         $str = $str . parse($tokenRef, 0, 1) . ")";
     }
+
+    if ($str =~ /\.join\(([a-zA-Z_][a-zA-Z_0-9]*|'[^']*'|"(\\.|[^\\"])*"),/) {
+        $str =~ s/\.join\(/.join([/;
+        $str =~ s/\)$/])/;
+    }
+
 
     return $str;
 }
@@ -634,7 +652,8 @@ sub findNext {
     my $key = $_[1];
     my @arr = ();
 
-    while ($$tokenRef[0][1] ne $key) {
+    while (@$tokenRef and $$tokenRef[0][1] ne $key) {
+        print $$tokenRef[0][1];
         push(@arr, shift(@$tokenRef));
     }
 
@@ -645,7 +664,6 @@ sub parseStr {
     my $str = $_[0];
     $str =~ s/\n/\\n/g;
     if (not ($str =~ /\$'[^']*'^/)) {
-        #TODO FIX THE HACK
         $str =~ s/\\\\/unlikelyword123/g;
         $str =~ s/([^\\])\$(([a-z]|[A-Z]|[0-9]|_)+)/$1" \+ str($2) \+ "/g;
         $str =~ s/([^\\])\$\{(([a-z]|[A-Z]|[0-9]|_)+)\}/$1" \+ str($2) \+ "/g;
