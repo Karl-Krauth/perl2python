@@ -4,8 +4,9 @@
 # for a COMP2041 assignment 
 # http://cgi.cse.unsw.edu.au/~cs2041/13s2/assignments/perl2python
 
-use warnings;
-use strict;
+#use warnings;
+#use strict;
+use Switch;
 
 sub main {
     my @tokens = ();
@@ -40,25 +41,30 @@ sub lex {
     my @regexps = (["comment", qr/(^#[^\n]*\n)/s],
                    ["string", qr/(^("(\\.|[^\\"])*"|'[^']*'))/s],
                    ["regex", qr/^=~\s*((m?\/(\\.|[^\\\/])*\/|s\/(\\.|[^\\\/])*\/(\\.|[^\\\/])*\/)[a-z])/s],
-                   ["num", qr/(^([0-9]+(\.[0-9]+)?|[0-9]*\.[0-9]+))/s],
+                   ["num", qr/^([0-9]+(\.[0-9]+)?)/s],#|[0-9]*\.[0-9]+))/s],
                    ["keyWord", getKeyWords()],
                    ["builtin", getBuiltins()],
                    ["diamond", qr/^(<[A-Z]*>)/],
                    ["range", qr/^(\.\.)/],
-                   ["post", qr/^(((\$|@|%|&)([a-z]|[0-9]|_|[A-Z])+)(\+\+|--))/],
+                   ["inc", getInc()],
                    ["pre", qr/^((\+\+|--)(\$|@|%|&)([a-z]|[0-9]|_|[A-Z])+)/],
                    ["concat", qr/^(\.=|\.)/],
                    ["arrLen", qr/^(\$#[a-zA-Z_][a-zA-Z0-9_]*)/],
                    ["array", qr/^(\$[a-zA-Z_][a-zA-Z0-9_]*\[)/],
                    ["hash", qr/^(\$[a-zA-Z_][a-zA-Z0-9_]*\{[^\}]*\})/],
-                   ["operator", getOperators()],
+                   ["leftRightOp", qr/^(\|\||&&|and|or|not|>>|<<)/],
+                   ["leftOp", qr/^(!|~)/],
+                   ["arithmetic", qr/^(\||\^\|&|\+|-|\/|%|\*\*|\*)/],
+                   ["stringComp", qr/^(ne|eq|lt|gt)/],
+                   ["arithComp", qr/^(<=|>=|!=|==|>|<)/],
+                   ["mod", qr/^(%)/],
                    ["variable", qr/(^(\$|@|%|&)?([a-z]|_|[A-Z])([a-z]|_|[0-9]|[A-Z])*)/s],
                    ["semiColon", qr/^(;)/s],
                    ["comma", qr/^(,)/s],
+                   ["assignment", qr/^(=)/s],
                    ["leftParen", qr/^([\{\(])/s],
                    ["rightParen", qr/^([\}\)\]])/s],
-                   ["assignment", qr/^(=)/s],
-                   ["error", qr/^([^\n]\n?)/s]);
+                   ["error", qr/^(([^\n]\n?|[.\n]$))/s]);
 
     while (not ($str eq "")) {
         my @result = ();
@@ -79,6 +85,9 @@ sub lex {
     return @tokens;
 }
 
+sub getInc {
+    return qr/^((\+\+|--)\$[A-Za-z_][A-Za-z0-9_]*|\$[A-Za-z_][A-Za-z0-9_]*(\+\+|--))/s;
+}
 sub getKeyWords {
     return qr/(^(if|while|foreach|for|elsif|else|last|next))/s;
 }
@@ -87,119 +96,106 @@ sub getBuiltins {
     return qr/^(printf|print|chomp|split|join)/s;
 }
 
-sub getOperators {
-    #TODO FIX ORDERING
-    return qr/(^(ne|eq|<=|>=|<<|>>|<|>|!=|==|\|\||&&|!|and|or|not|\||\^|&|~|\+|-|\/|%|\*\*|\*))/s;
-}
-
 sub parse {
     (my $tokens, my $indentLevel, my $readLine) = @_;
     my $str = "";
     my $temp;
     my $operator;
+    my $break = 0;
 
-    while (@$tokens) {
+    while (scalar @$tokens) {
         $temp = "";
         if ($str eq "" or $str =~ /\n$/) {
             $str = $str . " " x $indentLevel;
         }
 
-        if ($$tokens[0][0] eq "comment") {
-            $temp = $$tokens[0][1]; 
-            shift(@$tokens);
-        } elsif ($$tokens[0][0] eq "arrLen") {
-            $temp = parseArrLen($$tokens[0][1]);
-            shift(@$tokens);
-        } elsif ($$tokens[0][0] eq "variable") {
-            $temp = parseVariable($$tokens[0][1]);
-            shift(@$tokens);
-        } elsif ($$tokens[0][0] =~ /^(array|hash)$/) {
-            $temp = parseIndex($tokens);
-        } elsif ($$tokens[0][0] =~ /(post|pre)/) {
-            $$tokens[0][1] =~ s/\$([A-Za-z_][A-Za-z_0-9]*)//;
-            $temp = $1;
-            $$tokens[0][1] =~ /(\+|-)/;
-            $temp = $temp . " " . $1 . "= 1";
-            shift(@$tokens);
-        } elsif ($$tokens[0][0] eq "diamond") {
-            $temp = parseDiamond(${shift(@$tokens)}[1]);
-        } elsif ($$tokens[0][0] eq "operator") {
-            $temp = " " . parseOperator($$tokens[0][1]);
-            shift(@$tokens);
-            if (@$tokens and $$tokens[0][1] eq "=") {
-                $temp = $temp . ${shift(@$tokens)}[1];
-            }
-            $temp = $temp . " ";
-            if ($str =~ /\n$/) {
-                $temp =~ s/^\s*(not|~)$/$1/;
-            } 
-        } elsif ($$tokens[0][0] eq "comma") {
-            $temp = ", ";
-            shift(@$tokens);
-        } elsif ($$tokens[0][0] eq "assignment") {
-            $temp = " = ";
-            shift(@$tokens);
-        } elsif ($$tokens[0][0] eq "string") {
-            $temp = parseStr($$tokens[0][1]);
-            shift(@$tokens);
-        } elsif ($$tokens[0][0] eq "num") {
-            $temp = $$tokens[0][1];
-            shift(@$tokens);
-        } elsif ($$tokens[0][0] eq "builtin") {
-            $temp = parseBuiltin($tokens, $indentLevel);
-        } elsif ($$tokens[0][0] eq "keyWord") {
-            $temp = parseKeyword($tokens, $indentLevel);
-        } elsif ($$tokens[0][0] eq "semiColon") {
-            if ($readLine) {
-                last;
-            } else {
-                $temp = "\n";
-                shift(@$tokens);
-            }
-        } elsif ($$tokens[0][0] eq "leftParen") {
-            if ($$tokens[0][1] eq "{") {
-                shift(@$tokens);
-                $temp = parse($tokens, $indentLevel + 4, 0);
-            } else {
-                $temp = ${shift(@$tokens)}[1];
-                $temp = $temp . parse($tokens, 0, $readLine);
-            }
-        } elsif ($$tokens[0][0] eq "rightParen") {
-            if ($$tokens[0][1] eq "}") {
-                $str = $str . "\n";
-            } elsif ($$tokens[0][1] =~ /([\)\]])/) {
-                $str = $str . $1;
-            }
-            shift(@$tokens);
-            last;
-        } elsif ($$tokens[0][0] eq "error") {
-            $temp = "#";
-            while (@$tokens and not ($$tokens[0][1] =~ /[;\n}\)]/)) {
-                $temp = $temp . $$tokens[0][1];
-                shift(@$tokens);
-            }
-        } else {
-            shift(@$tokens);
+        switch ($$tokens[0][0]) {
+            case "comment"    {$temp = shiftVal($tokens)}    
+            case "arrLen"     {$temp = parseArrLen(shiftVal($tokens))}
+            case "variable"   {$temp = parseVariable(shiftVal($tokens))}
+            case "array"      {$temp = parseIndex($tokens)}
+            case "hash"       {$temp = parseIndex($tokens)}
+            case "inc"        {$temp = parseInc(shiftVal($tokens))}
+            case "diamond"    {$temp = parseDiamond(shiftVal($tokens))}
+            case "comma"      {$temp = shiftVal($tokens) . " "}
+            case "string"     {$temp = parseStr(shiftVal($tokens))}
+            case "num"        {$temp = shiftVal($tokens)}
+            case "builtin"    {$temp = parseBuiltin($tokens, $indentLevel)}
+            case "keyWord"    {$temp = parseKeyword($tokens, $indentLevel)}
+            case "leftOp"     {$temp = shiftVal($tokens) . " "}
+            case "leftParen"  {$temp = parseLeftParen($tokens, $indentLevel)}
+            case "error"      {$temp = errorRecovery($tokens)}
+            case "rightParen" {$str .= parseRightParen(shiftVal($tokens), $indentLevel);
+                               $break = 1}
+            case "semiColon"  {if ($readLine) {$break = 1}
+                               else {$temp = "\n"; shift(@$tokens)}}
         }
-
-        if (@$tokens) {
-            if ($$tokens[0][0] eq "range") { 
-                $str = $str . parseRange($temp, $tokens);
-            } elsif ($$tokens[0][0] eq "concat") {
-                $str = $str . parseConcat($temp, $tokens);
-            } elsif ($$tokens[0][0] eq "regex") {
-                $str = $str . parseRegex($temp, $$tokens[0][1]);
-                shift(@$tokens);
-            } else {
-                $str = $str . $temp;
-            }
+        last if $break;
+        if (scalar @$tokens) {
+            $str = $str . lookAhead($temp, $tokens);
         } else {
             $str = $str . $temp;
-        } 
+        }
     }
+    
     return $str;
 }
 
+sub errorRecovery {
+    my $tokenRef = $_[0];
+    my $str = "#" . shiftVal($tokenRef);
+    while (scalar @$tokenRef and not $$tokenRef[0][1] =~ /(^;$|\n)/) {
+        $str = $str . shiftVal($tokenRef);
+    }
+
+    shift(@$tokenRef);
+    return $str . "\n";
+}
+
+sub shiftVal {
+    my $tokenRef = $_[0];
+    return ${shift(@$tokenRef)}[1];
+}
+
+sub parseInc {
+    my $inc = $_[0];
+    my $val;    
+    my $operator;    
+
+    $inc =~ s/\$([A-Za-z0-9_][A-Za-z0-9_]*)//;
+    $val = $1;
+    $inc =~ /(\+|-)/; 
+    $operator = $1;
+    return $val . " " . $operator . "= 1";
+}
+
+sub parseLeftParen {
+    (my $tokenRef, my $indentLevel) = @_;
+    my $str = "";
+
+    if ($$tokenRef[0][1]) {
+        shift(@$tokenRef);
+        $str = parse($tokenRef, $indentLevel + 4, 0);
+    } else {
+        $str = shiftVal($tokenRef);
+        $str = $str . parse($tokenRef, 0, 0);
+    }
+
+    return $str;    
+}
+
+sub parseRightParen {
+    my $paren = $_[0];
+    my $str;
+
+    if ($paren eq "}") {
+        $str = "\n";
+    } else {
+        $str = $paren;
+    }
+
+    return $str;
+}
 
 #-----------------------------------------------------------------#
 #----------------------------Keywords-----------------------------#
@@ -233,7 +229,7 @@ sub parseIfs {
     (my $tokenRef, my $indentLevel) = @_;
 
     #shift the keyword (if/elsif/else)
-    my $str = ${shift(@$tokenRef)}[1] . " ";
+    my $str = shiftVal($tokenRef) . " ";
     $str =~ s/elsif/elif/;    
 
     if ($$tokenRef[0][1] eq "(") {
@@ -254,7 +250,7 @@ sub parseWhile {
     (my $tokenRef, my $indentLevel) = @_;
 
     #shift the while
-    my $str = ${shift(@$tokenRef)}[1] . " ";
+    my $str = shiftVal($tokenRef) . " ";
    
     #shift the left paren 
     shift(@$tokenRef);
@@ -282,7 +278,7 @@ sub parseFor {
     shift(@$tokenRef);
     if ($$tokenRef[0][0] eq "variable") {
         $$tokenRef[0][1] =~ s/^.//;
-        $str = "for " . ${shift(@$tokenRef)}[1] . " in ";
+        $str = "for " . shiftVal($tokenRef) . " in ";
         shift(@$tokenRef);
         $str = $str . parse($tokenRef, 0, 0);
         $str =~ s/\)$//;
@@ -309,6 +305,62 @@ sub parseFor {
 
 #-----------------------------------------------------------------#
 
+sub lookAhead {
+    (my $prevStr, my $tokens) = @_;
+    my $assign = 0;
+    my $str = "";
+
+    if ($$tokens[0][1] =~ /^.=/) {
+        $assign = 1;
+    }
+
+    if ($$tokens[0][0] eq "range") { 
+            $str = parseRange($prevStr, $tokens);
+    } elsif ($$tokens[0][0] eq "concat") {
+            $str = parseCast("str", $prevStr, $assign, $tokens);
+    } elsif ($$tokens[0][0] eq "regex") {
+        $str = parseRegex($prevStr, $$tokens[0][1]);
+        shift(@$tokens);
+    } elsif ($$tokens[0][0] eq "arithmetic") {
+        $str = parseCast("", $prevStr, $assign, $tokens);
+    } elsif ($$tokens[0][0] eq "arithComp") {
+        $str = parseCast("float", $prevStr, $assign, $tokens);
+    } elsif ($$tokens[0][0] eq "stringComp") {
+        $str = parseCast("str", $prevStr, $assign, $tokens);
+    } elsif ($$tokens[0][0] eq "mod") {
+        $str = parseCast("int", $prevStr, $assign, $tokens);
+    } elsif ($$tokens[0][0] eq "assignment") {
+        $str = parseCast("", $prevStr, 1, $tokens);
+    } else {
+        $str = $prevStr; 
+    }
+
+    return $str;
+}
+
+sub parseCast {
+    (my $cast, my $prevStr, my $assign, my $tokenRef) = @_;
+    my $str = "";
+    my $operator;
+    my $nextStr; 
+
+    $operator = parseOperator(shiftVal($tokenRef));
+    if ($cast ne "") {
+        if (not $assign and $prevStr ne "") {
+            $prevStr = "$cast(" . $prevStr . ")";
+        }
+        $nextStr = "$cast(" . parseNext($tokenRef) . ")";
+    } else {
+        $nextStr = parseNext($tokenRef);
+    }
+    $str = $prevStr . " " . $operator . " " . $nextStr;
+    
+    if (@$tokenRef) {
+        $str = $str . lookAhead("", $tokenRef);
+    }
+    return $str;
+}
+
 sub parseRange {
     my $range1 = $_[0];
     my $tokenRef = $_[1];
@@ -325,7 +377,7 @@ sub parseNext {
     my $str = "";
 
     if ($$tokenRef[0][0] eq "leftParen") {
-        $str = $str . ${shift(@$tokenRef)}[1];
+        $str = $str . shiftVal($tokenRef);
         $str = $str . parse($tokenRef, 0, 0);
     } elsif ($$tokenRef[0][0] =~ /(array|hash)/) {
         $str = $str . parseIndex($tokenRef);
@@ -333,21 +385,6 @@ sub parseNext {
         my @temp = (shift(@$tokenRef));
         $str = $str . parse(\@temp, 0, 0);
     }
-
-    return $str;
-}
-
-sub parseConcat {
-    (my $prevStr, my $tokenRef) = @_;
-    my $str = "";
-
-    $$tokenRef[0][1] =~ s/\./\+/;
-    if ($$tokenRef[0][1] eq "+") {
-        $prevStr = "str(" . $prevStr . ")"
-    }
-
-    $str = $prevStr . " " . ${shift(@$tokenRef)}[1] . " str(";
-    $str = $str . parseNext($tokenRef) . ")";
 
     return $str;
 }
@@ -446,19 +483,25 @@ sub parsePrintf {
 
 sub parsePrint {
     my $tokenRef = $_[0];
+    my $remParen = 0;
     my $str = "print";
     shift(@$tokenRef);
     if ($$tokenRef[0][1] eq "(") {
         shift(@$tokenRef);
+        $remParen = 1;
     }
     $str = $str . " " . parse($tokenRef, 0, 1);
-
     $str =~ s/\\\\/unlikelyword123/g;
-    $str =~ s/(\)?)$/,/;
+    if ($remParen) {
+        $str =~ s/(\)?)$/,/;
+    } else {
+        $str =~ s/$/,/;
+    }
     $str =~ s/(,\s*"\\n",\s*)$//;
     $str =~ s/\\n",$/"/;
     $str =~ s/\s*\+?\s+""//;
     $str =~ s/unlikelyword123/\\\\/g;
+    $str =~ s/print\s*,\s*$//;
     return $str;
 }
 
@@ -474,7 +517,11 @@ sub parseChomp {
     } else {
         $str = $str . parse($tokenRef, 0, 1);
     }
-    $str = $str . " = (" . $str . ")" . ".strip()";
+    if ($str =~ /\s*([^=]*)\s*=\s*(.*)/s) {
+        $str = $1 . " = (" . $2 . ")" . ".strip()";
+    } else {    
+        $str = $str . " = (" . $str . ")" . ".strip()";
+    }
 
     return $str;
 }
@@ -552,6 +599,10 @@ sub parseOperator {
         $str = "and";
     } elsif ($operator eq "!") {
         $str = "not";
+    } elsif ($operator eq ".") {
+        $str = "+";
+    } elsif ($operator eq ".=") {
+        $str = "+=";
     } else {
         $str = $operator;
     }
